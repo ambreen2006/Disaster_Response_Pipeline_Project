@@ -82,7 +82,7 @@ def build_model():
     selected_pipeline = Pipeline([
         ('vect', CountVectorizer(tokenizer = tokenize)),
         ('tfidf', TfidfTransformer()),
-        ('classifier', MultiOutputClassifier(XGBClassifier()))
+        ('classifier', MultiOutputClassifier(XGBClassifier(scale_pos_weight = 10)))
         ])
 
     parameters = {
