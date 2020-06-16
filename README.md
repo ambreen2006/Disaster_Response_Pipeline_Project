@@ -94,3 +94,7 @@ In a new web browser window, type in the following while replacing SPACEID and S
 command:
 
 `https://SPACEID-3001.SPACEDOMAIN`
+
+You should see the following screen:
+
+![Dashboard](https://github.com/ambreen2006/Disaster_Response_Pipeline_Project/blob/master/Resources/dashboard.png)
