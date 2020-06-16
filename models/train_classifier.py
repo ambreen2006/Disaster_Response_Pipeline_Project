@@ -1,11 +1,13 @@
-import re
+# import libraries
 import sys
-import pickle
+import re
 import numpy as np
 import pandas as pd
+import pickle
 
+from xgboost import XGBClassifier
 from sklearn.metrics import roc_auc_score
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, recall_score
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import classification_report
 from sklearn.pipeline import Pipeline, FeatureUnion
@@ -18,11 +20,11 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 from sqlalchemy import create_engine
 
+import sklearn
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 nltk.download(['punkt', 'wordnet'])
-
 
 def load_data(database_filepath):
     '''
@@ -69,48 +71,59 @@ def build_model():
     '''
 
     def get_best_classifier(selected_pipeline, parameters):
-          cv = GridSearchCV(selected_pipeline,
-                            param_grid = parameters,
-                            verbose = 1,
-                            n_jobs = -1)
-          return cv
+
+        cv = GridSearchCV(selected_pipeline,
+                          param_grid = parameters,
+                          verbose = 2, n_jobs = 8,
+                          scoring = ['recall_macro', 'f1_macro'],
+                          refit = 'recall_macro')
+        return cv
 
     selected_pipeline = Pipeline([
-            ('vect', CountVectorizer(tokenizer = tokenize)),
-            ('tfidf', TfidfTransformer()),
-            ('classifier', MultiOutputClassifier(AdaBoostClassifier()))
-    ])
+        ('vect', CountVectorizer(tokenizer = tokenize)),
+        ('tfidf', TfidfTransformer()),
+        ('classifier', MultiOutputClassifier(XGBClassifier()))
+        ])
 
     parameters = {
-        'classifier__estimator__learning_rate': [0.2, 0.4, 0.6, 0.8, 1],
+        'classifier__estimator__scale_pos_weight':[5, 10, 20, 100],
+        'classifier__estimator__learning_rate': [0.1, 0.2, 0.4, 0.6, 0.8, 1],
         'tfidf__use_idf': [True, False],
-        'classifier__estimator__algorithm':['SAMME', 'SAMME.R'],
-        'classifier__estimator__n_estimators': [5, 10, 15, 20, 30, 40, 50],
-    }
+        }
 
     cv = get_best_classifier(selected_pipeline, parameters)
     return cv
 
 def evaluate_model(model, X_test, Y_test, category_names):
+    '''Evaluate model on recall, auc, and f1-score'''
 
     def labeled_classification_report(Y_test, y_pred):
         '''display output of classification_report for each label'''
-
-        for i in range(0, len(category_names)):
-            print(f'{category_names[i]}')
+        cols = y.columns.values
+        for i in range(0, len(cols)):
+            print(f'{cols[i]}')
             print('-'*55)
-            c_pred = y_pred[:,i]
-            c_true = Y_test[category_names[i]]
+            c_pred = y_pred1[:,i]
+            c_true = y[cols[i]]
             print(classification_report(c_true, c_pred))
 
-    def display_scores(y_true, predicted):
-        '''Display f-1 and AUC scores'''
+    def recall_f1_auc(y_true, predicted):
+        '''Calculates recall, f1, and auc scores'''
 
-        f1 = f1_score(y_test, predicted, average = 'weighted')
-        auc = roc_auc_score(y_true, predicted, multi_class = 'ovo',
-                            average ='weighted')
-        display(f'f1-score: {f1}')
+        f1 = f1_score(y_test, predicted, average = 'macro')
+        auc = roc_auc_score(y_true, predicted, multi_class = 'ovo', average ='macro')
+        recall = recall_score(y_true, predicted, average = 'macro')
+        return f1, auc, recall
+
+    def display_scores(y_true, predicted):
+        '''Display f-1, recall, and AUC scores'''
+
+        f1, auc, recall = recall_f1_auc(y_true, predicted)
+        display('======================')
+        display(f'recall score: {recall}')
+        display(f'f1 score: {f1}')
         display(f'AUC score: {auc}')
+        display('======================')
 
     y_pred = model.predict(X_test)
     print("=== Estimator Information")
@@ -119,9 +132,7 @@ def evaluate_model(model, X_test, Y_test, category_names):
 
     print("=== Evaluation")
     display_scores(Y_test.values, y_pred)
-    labeled_classification_report(y_test, y_pred1)
     return
-
 
 def save_model(model, model_filepath):
     pickle.dump(model, open(model_filepath, 'wb'))
