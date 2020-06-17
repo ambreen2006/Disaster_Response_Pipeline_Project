@@ -6,8 +6,7 @@ import pandas as pd
 import pickle
 
 from xgboost import XGBClassifier
-from sklearn.metrics import roc_auc_score
-from sklearn.metrics import f1_score, recall_score
+from sklearn.metrics import roc_auc_score, f1_score, recall_score, make_scorer
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import classification_report
 from sklearn.pipeline import Pipeline, FeatureUnion
@@ -22,12 +21,13 @@ from sqlalchemy import create_engine
 
 import sklearn
 import nltk
+from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 nltk.download(['punkt', 'wordnet'])
 
 def load_data(database_filepath):
-    '''
+    """
     Loads data from the sql database
 
     Args:
@@ -36,10 +36,11 @@ def load_data(database_filepath):
     NOT include sql:// as it is appended in this method
 
     Returns:
+    --------
     X: The message feature data
     Y: The target labels data
     column names: Names of the target labels
-    '''
+    """
 
     path = 'sqlite:///'+database_filepath
     engine = create_engine(path)
@@ -55,41 +56,51 @@ def tokenize(text):
     text
     '''
 
+    text = re.sub(r"[^a-zA-Z0-9]", " ", text.lower())
     url_regex = 'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
     text = re.sub(url_regex, 'urlplaceholder', text)
+    stop_words = stopwords.words('english')
     lemmatizer = WordNetLemmatizer()
     tokens = word_tokenize(text)
-    tokens = [lemmatizer.lemmatize(x).lower().strip() for x in tokens]
+    tokens = [lemmatizer.lemmatize(x).strip() for x in tokens
+                                            if x not in stop_words]
     return tokens
 
+def scorer_f1(yt, yp):
+    return f1_score(yt, yp, average='macro', zero_division=1)
+
+def scorer_recall(yt, yp):
+    return recall_score(yt, yp, average='macro', zero_division=1)
 
 def build_model():
-    '''
-    Get a tuned pipeline using GridSearchCV. AdaBoostClassifier is choosen
-    becaused based on the analysis done on `ML Pipeline Preparation.ipynb`, it
-    performed better in terms of f1-score and AUC.
-    '''
-
+    """Search for better XGBoost parameters using GridSearchCV"""
+    
     def get_best_classifier(selected_pipeline, parameters):
 
-        cv = GridSearchCV(selected_pipeline,
-                          param_grid = parameters,
-                          verbose = 2, n_jobs = 8,
-                          scoring = ['recall_macro', 'f1_macro'],
-                          refit = 'recall_macro')
+        selected_scorers = {
+            'f1': make_scorer(scorer_f1),
+            'recall': make_scorer(scorer_recall)
+        }
+
+        # I'm not using n_jobs=-1 because it seems to be that
+        # there is some issue in the library regarding leaks
+        cv = GridSearchCV(selected_pipeline, param_grid=parameters,
+                            verbose=1,
+                            scoring=selected_scorers,
+                            refit='recall')
         return cv
 
     selected_pipeline = Pipeline([
-        ('vect', CountVectorizer(tokenizer = tokenize)),
-        ('tfidf', TfidfTransformer()),
-        ('classifier', MultiOutputClassifier(XGBClassifier(scale_pos_weight = 10)))
-        ])
+            ('vect', CountVectorizer(tokenizer = tokenize)),
+            ('tfidf', TfidfTransformer()),
+            ('classifier', MultiOutputClassifier(XGBClassifier()))
+    ])
 
     parameters = {
         'classifier__estimator__scale_pos_weight':[5, 10, 20, 100],
         'classifier__estimator__learning_rate': [0.1, 0.2, 0.4, 0.6, 0.8, 1],
         'tfidf__use_idf': [True, False],
-        }
+    }
 
     cv = get_best_classifier(selected_pipeline, parameters)
     return cv
@@ -99,31 +110,30 @@ def evaluate_model(model, X_test, Y_test, category_names):
 
     def labeled_classification_report(Y_test, y_pred):
         '''display output of classification_report for each label'''
-        cols = y.columns.values
-        for i in range(0, len(cols)):
-            print(f'{cols[i]}')
+        for i in range(0, len(category_names)):
+            print(f'{category_names[i]}')
             print('-'*55)
-            c_pred = y_pred1[:,i]
-            c_true = y[cols[i]]
-            print(classification_report(c_true, c_pred))
+            c_pred = y_pred[:,i]
+            c_true = Y_test[category_names[i]]
+            print(classification_report(c_true, c_pred, zero_division=1))
 
     def recall_f1_auc(y_true, predicted):
         '''Calculates recall, f1, and auc scores'''
 
-        f1 = f1_score(y_test, predicted, average = 'macro')
+        f1 = f1_score(y_true, predicted, average = 'macro', zero_division=1)
         auc = roc_auc_score(y_true, predicted, multi_class = 'ovo', average ='macro')
-        recall = recall_score(y_true, predicted, average = 'macro')
+        recall = recall_score(y_true, predicted, average = 'macro', zero_division=1)
         return f1, auc, recall
 
     def display_scores(y_true, predicted):
         '''Display f-1, recall, and AUC scores'''
 
         f1, auc, recall = recall_f1_auc(y_true, predicted)
-        display('======================')
-        display(f'recall score: {recall}')
-        display(f'f1 score: {f1}')
-        display(f'AUC score: {auc}')
-        display('======================')
+        print('======================')
+        print(f'recall score: {recall}')
+        print(f'f1 score: {f1}')
+        print(f'AUC score: {auc}')
+        print('======================')
 
     y_pred = model.predict(X_test)
     print("=== Estimator Information")
@@ -132,6 +142,7 @@ def evaluate_model(model, X_test, Y_test, category_names):
 
     print("=== Evaluation")
     display_scores(Y_test.values, y_pred)
+    labeled_classification_report(Y_test, y_pred)
     return
 
 def save_model(model, model_filepath):
@@ -148,7 +159,7 @@ def main():
 
         print('Training model...')
         model.fit(X_train, Y_train)
-
+        
         print('Evaluating model...')
         evaluate_model(model, X_test, Y_test, category_names)
 
