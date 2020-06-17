@@ -1,7 +1,9 @@
+import re
 import json
 import plotly
 import pandas as pd
 
+from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
@@ -11,19 +13,23 @@ from plotly.graph_objs import Bar
 from sklearn.externals import joblib
 from sqlalchemy import create_engine
 
-
 app = Flask(__name__)
+stop_words = stopwords.words('english')
 
 def tokenize(text):
-    tokens = word_tokenize(text)
+    '''
+    Replace url with a placeholder then tokenize and lemmatize words in the
+    text
+    '''
+
+    text = re.sub(r"[^a-zA-Z0-9]", " ", text.lower())
+    url_regex = 'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+    text = re.sub(url_regex, 'urlplaceholder', text)
     lemmatizer = WordNetLemmatizer()
-
-    clean_tokens = []
-    for tok in tokens:
-        clean_tok = lemmatizer.lemmatize(tok).lower().strip()
-        clean_tokens.append(clean_tok)
-
-    return clean_tokens
+    tokens = word_tokenize(text)
+    tokens = [lemmatizer.lemmatize(x).strip() for x in tokens
+                                            if x not in stop_words]
+    return tokens
 
 # load data
 engine = create_engine('sqlite:///../data/DisasterResponse.db')
@@ -42,10 +48,12 @@ def index():
     genre_counts = df.groupby('genre').count()['message']
     genre_names = list(genre_counts.index)
 
+    categories_distribution = df.iloc[:, 4:].sum()
+    print(categories_distribution[0])
     # create visuals
     # TODO: Below is an example - modify to create your own visuals
     graphs = [
-        {
+    {
             'data': [
                 Bar(
                     x=genre_names,
@@ -62,6 +70,24 @@ def index():
                     'title': "Genre"
                 }
             }
+        },
+        {
+            'data': [
+                Bar(
+                    x=categories_distribution.index,
+                    y=categories_distribution
+                )
+            ],
+
+            'layout': {
+                'title': 'Distribution of Message Categories',
+                'yaxis': {
+                    'title': "Count"
+                },
+                'xaxis': {
+                    'title': "Categories"
+                }
+            }
         }
     ]
 
@@ -70,19 +96,20 @@ def index():
     graphJSON = json.dumps(graphs, cls=plotly.utils.PlotlyJSONEncoder)
 
     # render web page with plotly graphs
-    return render_template('master.html', ids=ids, graphJSON=graphJSON)
-
+    return render_template('master.html',
+                            ids=ids, graphJSON=graphJSON)
+                            #ids_cat=ids_cat, graphJSON_cat=graphJSON_cat)
 
 # web page that handles user query and displays model results
 @app.route('/go')
 def go():
     # save user input in query
     query = request.args.get('query', '')
-
+    print(query)
     # use model to predict classification for query
     classification_labels = model.predict([query])[0]
     classification_results = dict(zip(df.columns[4:], classification_labels))
-
+    print(f'classification_result {classification_results}')
     # This will render the go.html Please see that file.
     return render_template(
         'go.html',
