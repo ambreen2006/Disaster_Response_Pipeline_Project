@@ -51,10 +51,7 @@ def load_data(database_filepath):
     return X['message'], Y, Y.columns.values
 
 def tokenize(text):
-    '''
-    Replace url with a placeholder then tokenize and lemmatize words in the
-    text
-    '''
+    """Replace url with a placeholder then tokenize and lemmatize words in the text"""
 
     text = re.sub(r"[^a-zA-Z0-9]", " ", text.lower())
     url_regex = 'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
@@ -67,9 +64,41 @@ def tokenize(text):
     return tokens
 
 def scorer_f1(yt, yp):
+    """
+    Returns f1_score with desired parameters.
+    For testing purposes, if a smaller sample of records is passed,
+    then the prediction may not have all the classifications resulting in
+    zero division warning.
+
+    Args:
+    -----
+    yt: the true target
+    yp: the predicted categories
+
+    Returns:
+    --------
+    f1 score
+    """
+    
     return f1_score(yt, yp, average='macro', zero_division=1)
 
 def scorer_recall(yt, yp):
+    """
+    Returns recall_score with desired parameters.
+    For testing purposes, if a smaller sample of records is passed,
+    then the prediction may not have all the classifications resulting in
+    zero division warning.
+
+    Args:
+    -----
+    yt: the true target
+    yp: the predicted categories
+
+    Returns:
+    --------
+    recall score
+    """    
+    
     return recall_score(yt, yp, average='macro', zero_division=1)
 
 def build_model():
@@ -106,7 +135,17 @@ def build_model():
     return cv
 
 def evaluate_model(model, X_test, Y_test, category_names):
-    '''Evaluate model on recall, auc, and f1-score'''
+    """
+    Evaluate model on recall, auc, and f1-score and prints it on the screen.
+    
+    Args:
+    -----
+    model: the fitted scikit model to be evaluated
+    X_test: the input features on which predictions are to be made
+    Y_test: the actual target categories
+    category_names: the category names
+
+    """
 
     def labeled_classification_report(Y_test, y_pred):
         '''display output of classification_report for each label'''
@@ -146,6 +185,15 @@ def evaluate_model(model, X_test, Y_test, category_names):
     return
 
 def save_model(model, model_filepath):
+    """
+    Pickle the model to the path specified.
+
+    Args:
+    -----
+    model: model to be saved
+    model_filpath: path indicating where to save the model
+    """
+
     pickle.dump(model, open(model_filepath, 'wb'))
 
 def main():
