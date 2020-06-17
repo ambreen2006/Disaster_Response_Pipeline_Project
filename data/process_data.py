@@ -11,7 +11,6 @@ def load_data(messages_filepath, categories_filepath):
     df = pd.merge(messages, categories, on = 'id')
     return df
 
-
 def clean_data(df):
     '''Clean and organize data'''
     def get_categories_as_dataframe(data):
@@ -27,7 +26,7 @@ def clean_data(df):
             cats[column]  = cats[column].str[-1]
             cats[column] = cats[column].astype('int')
         cats.replace(to_replace = 2, value = 1, inplace = True)
-        categories.drop(columns = ['child_alone'], inplace = True)
+        cats.drop(columns = ['child_alone'], inplace = True)
         data = pd.concat([data.drop(columns = ['categories']), cats],
                         axis = 1)
         return data
