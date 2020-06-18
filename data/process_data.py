@@ -5,14 +5,27 @@ import pandas as pd
 from sqlalchemy import create_engine
 
 def load_data(messages_filepath, categories_filepath):
-    '''Loads messages and categories data from csv files'''
+    """
+    Loads messages and categories data from csv files
+
+    Args:
+    -----
+    message_filepath: path to the messages csv file
+    categories_filepath: path to the categories csv file
+
+    Returns:
+    --------
+    Pandas dataframe with merged message and categories data
+    """
+
     messages = pd.read_csv(messages_filepath)
     categories = pd.read_csv(categories_filepath)
     df = pd.merge(messages, categories, on = 'id')
     return df
 
 def clean_data(df):
-    '''Clean and organize data'''
+    """Clean and reformat the dataframe"""
+
     def get_categories_as_dataframe(data):
         cats = data.categories.str.split(';', expand = True)
         row = cats.iloc[0,:]
@@ -40,10 +53,15 @@ def clean_data(df):
 
 
 def save_data(df, database_filename):
-    '''
-    Saves the dataframe to the filename provided. The filename MUST NOT
-    include the sql:/// prefix
-    '''
+    """
+    Saves the dataframe to the filename provided. 
+    
+    Args:
+    -----
+    df: the dataframe to serialize
+    database_filename: the filename, MUST NOT include the sql:/// prefix
+    """
+
     uri = 'sqlite:///' + database_filename
     engine = create_engine(uri)
     df.to_sql('Messages', engine, index = False, if_exists='replace')
